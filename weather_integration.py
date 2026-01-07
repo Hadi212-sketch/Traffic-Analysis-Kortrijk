@@ -18,7 +18,7 @@ TIMEZONE = "Europe/Brussels"
 
 # Data paths
 DATA_DIR = Path("data")
-TRAFFIC_FILE = DATA_DIR / "sintmartenslatemlaan_per-hour.csv"
+TRAFFIC_FILE = DATA_DIR / "traffic_two_streets_raw.csv"
 WEATHER_FILE = DATA_DIR / "weather_kortrijk.csv"
 MERGED_FILE = DATA_DIR / "traffic_weather_merged.csv"
 
@@ -129,12 +129,13 @@ def merge_traffic_weather(traffic_df: pd.DataFrame, weather_df: pd.DataFrame) ->
     
     # Merge on date (hour-level alignment)
     merged = pd.merge(
-        traffic_df,
-        weather_df,
-        on="date",
-        how="left",
-        validate="1:1"
+    traffic_df,
+    weather_df,
+    on="date",
+    how="left",
+    validate="m:1"   # was "1:1"
     )
+
     
     # Validation
     missing_weather = merged["temperature_c"].isna().sum()
