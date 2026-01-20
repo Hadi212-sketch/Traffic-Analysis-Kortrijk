@@ -219,7 +219,7 @@ models, targets, feature_cols = load_models()
 sint_martens_code = df_model[df_model["street_name"] == "Sintmartenslatemlaan"]["street_code"].iloc[0]
 
 # Main app
-st.title("🚗 Sint-Martens-Latemlaan Traffic Analysis & Prediction")
+st.markdown("<h1 style='text-align: center; font-size: 3.5rem; margin-bottom: 0.5rem;'>🚗 Traffic Analysis & Prediction</h1>", unsafe_allow_html=True)
 st.markdown("Interactive analysis and forecasting of traffic patterns around Howest Campus")
 
 # Sidebar controls
@@ -246,7 +246,7 @@ end_date = st.sidebar.date_input(
 
 # Forecast parameters
 st.sidebar.subheader("Forecast Parameters")
-weeks_ahead = st.sidebar.slider("Weeks ahead to forecast", 1, 20, 4)
+weeks_ahead = st.sidebar.slider("Weeks ahead to forecast", 1, 13, 4)
 
 parking_scenario = st.sidebar.selectbox(
     "Parking Scenario",
@@ -266,9 +266,22 @@ vacation_scenario = st.sidebar.selectbox(
     help="Calendar: use real calendar, Force vacation: all days as vacation, Force no vacation: no vacation days"
 )
 
-run_forecast = st.sidebar.button("🔮 Run Forecast", type="primary")
+run_forecast = st.sidebar.button("🔮 Run Forecast", type="primary", use_container_width=True)
 
-# Main content
+# Main content with custom CSS for larger tabs
+st.markdown("""
+<style>
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.4rem;
+        font-weight: 600;
+        padding: 14px 28px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Historical Analysis", "🔮 Future Forecast", "📊 Scenario Comparison", "📋 Raw Data", "🎯 Clustering & Anomalies"])
 
 with tab1:
@@ -354,7 +367,11 @@ with tab1:
         weekly_avg = filtered_data.groupby('dayofweek')['total_people'].mean()
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         
-        bars = ax.bar(range(7), weekly_avg.values, 
+        # Create full week data with zeros for missing days
+        full_week = pd.Series(0, index=range(7))
+        full_week[weekly_avg.index] = weekly_avg.values
+        
+        bars = ax.bar(range(7), full_week.values, 
                      color=['#2E86AB' if i < 5 else '#F18F01' for i in range(7)],
                      edgecolor='white', linewidth=2)
         
@@ -365,10 +382,11 @@ with tab1:
         ax.grid(axis='y', alpha=0.3)
         
         # Add value labels on bars
-        for bar, value in zip(bars, weekly_avg.values):
+        for bar, value in zip(bars, full_week.values):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
+            if value > 0:  # Only show label if there's data
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
         st.pyplot(fig)
@@ -378,8 +396,8 @@ with tab2:
     
     if run_forecast:
         with st.spinner("🔄 Generating forecast..."):
-            # Get last datetime from data
-            last_dt = df_model['datetime'].max()
+            # Use the selected end date as the starting point for forecast
+            last_dt = pd.to_datetime(end_date).tz_localize(None)
             
             # Create future dataframe
             future = create_future_dataframe(
@@ -438,7 +456,9 @@ with tab2:
                 )
             
             # Enhanced visualization section
-            st.subheader("📊 Traffic Forecast Overview")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("<h2 style='font-size: 2.2rem;'>📈 Traffic Forecast Overview</h2>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             
             # Daily Average Comparison (Bar Chart) - Full Width
             st.markdown("### 📊 Daily Average Comparison by Day")
@@ -456,19 +476,23 @@ with tab2:
                           color='#F44336' if parking_scenario == "closed" else '#FF9800',
                           alpha=0.8)
             
-            # Add value labels on bars
-            for bars in [bars1, bars2]:
-                for bar in bars:
-                    height = bar.get_height()
-                    ax.text(bar.get_x() + bar.get_width()/2., height,
-                           f'{height:.0f}', ha='center', va='bottom', 
-                           fontweight='bold', fontsize=10)
+            # Add value labels on bars - only if not too many days to avoid overlap
+            if len(daily_open) <= 21:  # Only show labels for 3 weeks or less
+                label_fontsize = 10 if len(daily_open) <= 14 else 8
+                for bars in [bars1, bars2]:
+                    for bar in bars:
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2., height,
+                               f'{height:.0f}', ha='center', va='bottom', 
+                               fontweight='bold', fontsize=label_fontsize)
             
-            ax.set_xlabel('Day Number', fontweight='bold', fontsize=13)
+            ax.set_xlabel('Date', fontweight='bold', fontsize=13)
             ax.set_ylabel('Average People per Hour', fontweight='bold', fontsize=13)
             ax.set_title('Daily Traffic Averages', fontweight='bold', fontsize=15)
             ax.set_xticks(x)
-            ax.set_xticklabels([f'{i+1}' for i in range(len(daily_open))], fontsize=11)
+            # Format dates as MM/DD
+            date_labels = [date.strftime('%m/%d') for date in daily_open.index]
+            ax.set_xticklabels(date_labels, fontsize=10, rotation=45, ha='right')
             ax.legend(fontsize=12, loc='upper right')
             ax.grid(axis='y', alpha=0.3)
             plt.tight_layout()
@@ -699,7 +723,7 @@ with tab2:
             modes = ["car", "bike", "pedestrian", "heavy"]
             open_totals = [future_open[m].sum() for m in modes]
             adj_totals = [future_adj[m].sum() for m in modes]
-            mode_names = ['🚗 Car', '🚲 Bike', '🚶‍♂️ Pedestrian', '🚛 Heavy']
+            mode_names = ['Car', 'Bike', 'Pedestrian', 'Heavy']
             
             x = np.arange(len(modes))
             width = 0.35
@@ -746,20 +770,58 @@ with tab2:
             st.pyplot(fig)
             
             # Summary insights text
-            st.markdown("### 📋 Forecast Summary")
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("<h2 style='font-size: 2.2rem;'>📋 Forecast Summary</h2>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             
             impact_level = "High" if abs(total_change) > 15 else "Medium" if abs(total_change) > 5 else "Low"
             impact_color = "🔴" if abs(total_change) > 15 else "🟡" if abs(total_change) > 5 else "🟢"
             
-            st.markdown(f"""
-            **Parking Policy Impact:** {impact_color} **{impact_level} Impact** ({total_change:+.1f}% total change)
+            # Create interactive metric cards
+            col1, col2, col3, col4 = st.columns(4)
             
-            **Key Findings:**
-            - **Cars:** {car_change:+.1f}% change ({future_adj['car'].sum():.0f} total vs {future_open['car'].sum():.0f} baseline)
-            - **Bikes:** {bike_change:+.1f}% change ({future_adj['bike'].sum():.0f} total vs {future_open['bike'].sum():.0f} baseline) 
-            - **Pedestrians:** {ped_change:+.1f}% change ({future_adj['pedestrian'].sum():.0f} total vs {future_open['pedestrian'].sum():.0f} baseline)
-            - **Peak Hours:** {future_adj.groupby(future_adj['datetime'].dt.hour)['total_people'].mean().idxmax()}:00 - {future_adj.groupby(future_adj['datetime'].dt.hour)['total_people'].mean().idxmax()+2}:00
-            """)
+            with col1:
+                st.metric(
+                    label="🚗 Cars Impact",
+                    value=f"{future_adj['car'].sum():.0f}",
+                    delta=f"{car_change:+.1f}%"
+                )
+            
+            with col2:
+                st.metric(
+                    label="🚴 Bikes Impact",
+                    value=f"{future_adj['bike'].sum():.0f}",
+                    delta=f"{bike_change:+.1f}%"
+                )
+            
+            with col3:
+                st.metric(
+                    label="🚶 Pedestrians Impact",
+                    value=f"{future_adj['pedestrian'].sum():.0f}",
+                    delta=f"{ped_change:+.1f}%"
+                )
+            
+            with col4:
+                st.metric(
+                    label="📏 Total Impact",
+                    value=f"{future_adj['total_people'].sum():.0f}",
+                    delta=f"{total_change:+.1f}%"
+                )
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Summary box with better contrast
+            st.markdown(f"""
+            <div style='background-color: #e8f4f8; padding: 2rem; border-radius: 10px; border-left: 5px solid #2E86AB;'>
+                <h3 style='margin-top: 0; font-size: 1.5rem; color: #1a1a1a;'>{impact_color} Parking Policy Impact: <strong>{impact_level}</strong> ({total_change:+.1f}% total change)</h3>
+                <h4 style='font-size: 1.3rem; margin-top: 1.5rem; color: #2a2a2a;'>🔑 Key Insights:</h4>
+                <ul style='font-size: 1.1rem; line-height: 2; color: #2a2a2a;'>
+                    <li><strong>Baseline vs Scenario:</strong> {future_open['total_people'].sum():.0f} → {future_adj['total_people'].sum():.0f} total people</li>
+                    <li><strong>Peak Traffic Hours:</strong> {future_adj.groupby(future_adj['datetime'].dt.hour)['total_people'].mean().idxmax()}:00 - {future_adj.groupby(future_adj['datetime'].dt.hour)['total_people'].mean().idxmax()+2}:00</li>
+                    <li><strong>Daily Average:</strong> {future_adj['total_people'].mean():.0f} people per hour</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
             
             # Weather impact note
             if weather_scenario == "rainy_morning_rush":
@@ -1001,11 +1063,31 @@ with tab5:
     clustering_data = load_clustering_data()
     
     if clustering_data is not None:
+        # Apply date filters from sidebar
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date) + pd.Timedelta(days=1)
+        
+        # Remove timezone info from clustering data for comparison
+        if clustering_data['date'].dt.tz is not None:
+            clustering_data['date'] = clustering_data['date'].dt.tz_localize(None)
+        
+        # Filter data based on selected dates
+        mask = (clustering_data['date'] >= start_dt) & (clustering_data['date'] < end_dt)
+        clustering_data = clustering_data[mask].copy()
+        
+        if len(clustering_data) == 0:
+            st.warning("⚠️ No data available for the selected date range. Please adjust the date filters.")
+            st.stop()
+        
         # Focus on cyclist data for both key streets
         df_two_streets = clustering_data[clustering_data['street_name'].isin([
             'Sintmartenslatemlaan',
             'Graaf Karel de Goedelaan'
         ])].copy()
+        
+        if len(df_two_streets) == 0:
+            st.warning("⚠️ No data available for the selected streets in this date range.")
+            st.stop()
         
         # Feature engineering
         df_two_streets['hour'] = df_two_streets['date'].dt.hour
@@ -1019,7 +1101,7 @@ with tab5:
         col1, col2 = st.columns(2)
         
         with col1:
-            n_clusters = st.slider("Number of Clusters", 2, 8, 4)
+            n_clusters = st.slider("Number of Clusters", 2, 4, 3)
             contamination_rate = st.slider("Anomaly Detection Rate (%)", 1, 5, 2) / 100
         
         with col2:
@@ -1145,36 +1227,6 @@ with tab5:
             plt.suptitle('Cyclist Count vs Temperature (Anomalies Highlighted)', fontsize=14, fontweight='bold')
             plt.tight_layout()
             st.pyplot(fig)
-            
-            # Good weather anomalies
-            st.subheader("🌤️ Good Weather Anomalies")
-            st.markdown("Times when cycling conditions were favorable but cyclist counts were unexpectedly low:")
-            
-            good_weather_anomalies = df_two_streets[
-                df_two_streets['is_anomaly'] &
-                (df_two_streets['precipitation_mm'] == 0) &
-                (df_two_streets['temperature_c'] >= 10) &
-                (df_two_streets['temperature_c'] <= 25) &
-                (df_two_streets['target_count'] < df_two_streets['target_count'].median())
-            ]
-            
-            if len(good_weather_anomalies) > 0:
-                st.write(f"Found {len(good_weather_anomalies)} good weather anomalies:")
-                
-                display_cols = ['date', 'street_name', 'hour', 'target_count', 'temperature_c', 
-                              'precipitation_mm', 'cluster']
-                st.dataframe(good_weather_anomalies[display_cols].head(20), use_container_width=True)
-                
-                # Download anomalies
-                anomaly_csv = good_weather_anomalies[display_cols].to_csv(index=False)
-                st.download_button(
-                    "📥 Download Good Weather Anomalies",
-                    data=anomaly_csv,
-                    file_name="good_weather_anomalies.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("No good weather anomalies found with current parameters.")
         
         else:
             st.info("👆 Click 'Run Clustering Analysis' to see results")
