@@ -209,6 +209,212 @@ def create_future_dataframe(last_datetime, weeks_ahead, street_code, holidays, v
     
     return future
 
+# Roadblock simulation functions
+def apply_roadblock_adjustment(df_preds, start_h, end_h):
+    """Apply roadblock impact on traffic predictions"""
+    df_rb = df_preds.copy()
+    hours = df_rb["datetime"].dt.hour
+    mask = hours.between(start_h, end_h)
+
+    # Roadblock assumptions
+    df_rb.loc[mask, "car"] *= 0.1
+    df_rb.loc[mask, "heavy"] *= 0.2
+    df_rb.loc[mask, "bike"] *= 0.8
+    df_rb.loc[mask, "pedestrian"] *= 0.9
+
+    df_rb.loc[mask, "total"] = (
+        df_rb.loc[mask, "car"] +
+        df_rb.loc[mask, "bike"] +
+        df_rb.loc[mask, "pedestrian"]
+    )
+    return df_rb
+
+def plot_total_roadblock_day(future_base, future_rb, selected_date, street_name, start_hour, end_hour):
+    """Creates an attractive line chart comparing total traffic with and without roadblock"""
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    hours = future_base["datetime"].dt.hour
+    
+    # Plot baseline as filled area
+    ax.fill_between(hours, future_base["total"], alpha=0.3, 
+                     color='#4A90E2', label='Normal Traffic')
+    ax.plot(hours, future_base["total"], color='#4A90E2', 
+            linewidth=2.5, marker='o', markersize=5)
+    
+    # Plot roadblock scenario with strong red
+    ax.plot(hours, future_rb["total"], color='#E74C3C', 
+            linewidth=3, marker='s', markersize=6, label='With Roadblock')
+    
+    # Highlight roadblock time window
+    ax.axvspan(start_hour, end_hour, alpha=0.15, color='red', 
+               label=f'Roadblock Period ({start_hour}:00-{end_hour}:00)')
+    
+    ax.set_xlabel('Time of Day', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Total People per Hour', fontsize=13, fontweight='bold')
+    ax.set_title(f'Traffic Impact on {selected_date.strftime("%Y-%m-%d")} – {street_name}\n'
+                 f'Roadblock from {start_hour}:00 to {end_hour}:00',
+                 fontsize=15, fontweight='bold', pad=20)
+    
+    ax.set_xticks(range(0, 25, 3))
+    ax.set_xticklabels([f'{h:02d}:00' for h in range(0, 25, 3)])
+    ax.set_xlim(-0.5, 23.5)
+    
+    ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
+    ax.legend(loc='upper left', fontsize=11, framealpha=0.95)
+    
+    # Add percentage drop annotation at peak hour
+    peak_hour_idx = future_base["total"].idxmax()
+    peak_hour = future_base.loc[peak_hour_idx, "datetime"].hour
+    if start_hour <= peak_hour <= end_hour:
+        baseline_val = future_base.loc[peak_hour_idx, "total"]
+        rb_val = future_rb.loc[peak_hour_idx, "total"]
+        drop_pct = 100 * (baseline_val - rb_val) / baseline_val
+        
+        ax.annotate(f'-{drop_pct:.0f}%', 
+                   xy=(peak_hour, rb_val),
+                   xytext=(peak_hour, baseline_val * 0.7),
+                   fontsize=12, fontweight='bold', color='#E74C3C',
+                   ha='center',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
+                            edgecolor='#E74C3C', linewidth=2),
+                   arrowprops=dict(arrowstyle='->', color='#E74C3C', lw=2))
+    
+    plt.tight_layout()
+    return fig
+
+def plot_per_mode_roadblock_day(future_base, future_rb, selected_date, street_name, start_hour, end_hour):
+    """Creates a 2x2 grid showing per-mode traffic impact"""
+    modes = ["car", "bike", "pedestrian", "heavy"]
+    mode_labels = {
+        "car": "Cars",
+        "bike": "Bikes", 
+        "pedestrian": "Pedestrians",
+        "heavy": "Heavy Vehicles"
+    }
+    mode_colors = {
+        "car": "#3498DB",
+        "bike": "#27AE60",
+        "pedestrian": "#E67E22",
+        "heavy": "#9B59B6"
+    }
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True)
+    axes = axes.ravel()
+    
+    hours = future_base["datetime"].dt.hour
+    
+    for idx, (ax, mode) in enumerate(zip(axes, modes)):
+        ax.fill_between(hours, future_base[mode], alpha=0.25, 
+                         color=mode_colors[mode])
+        ax.plot(hours, future_base[mode], color=mode_colors[mode], 
+                linewidth=2.5, marker='o', markersize=4, 
+                label='Normal Traffic', alpha=0.8)
+        
+        ax.plot(hours, future_rb[mode], color='#E74C3C', 
+                linewidth=2.5, marker='s', markersize=4, 
+                label='With Roadblock', linestyle='--')
+        
+        ax.axvspan(start_hour, end_hour, alpha=0.12, color='red')
+        
+        ax.set_title(mode_labels[mode], fontsize=13, fontweight='bold', pad=10)
+        ax.set_ylabel('Count per Hour', fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
+        ax.set_xlim(-0.5, 23.5)
+        
+        if idx == 0:
+            ax.legend(loc='upper left', fontsize=10, framealpha=0.95)
+        
+        mask = (hours >= start_hour) & (hours <= end_hour)
+        avg_base = future_base.loc[mask, mode].mean()
+        avg_rb = future_rb.loc[mask, mode].mean()
+        if avg_base > 0:
+            drop_pct = 100 * (avg_base - avg_rb) / avg_base
+            
+            textstr = f'Avg Drop:\n{drop_pct:.0f}%'
+            props = dict(boxstyle='round', facecolor='white', 
+                        edgecolor=mode_colors[mode], linewidth=2, alpha=0.9)
+            ax.text(0.98, 0.97, textstr, transform=ax.transAxes,
+                   fontsize=10, fontweight='bold', verticalalignment='top',
+                   horizontalalignment='right', bbox=props, color=mode_colors[mode])
+    
+    for ax in axes[2:]:
+        ax.set_xlabel('Time of Day', fontsize=11, fontweight='bold')
+        ax.set_xticks(range(0, 25, 3))
+        ax.set_xticklabels([f'{h:02d}:00' for h in range(0, 25, 3)])
+    
+    fig.suptitle(f'Traffic Impact by Mode on {selected_date.strftime("%Y-%m-%d")} – {street_name}\n'
+                 f'Roadblock from {start_hour}:00 to {end_hour}:00',
+                 fontsize=16, fontweight='bold', y=0.995)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    return fig
+
+def build_roadblock_insights(future_base, future_rb, selected_date, start_hour, end_hour):
+    """Generates markdown-formatted insights about roadblock impact"""
+    hours = future_base["datetime"].dt.hour
+    mask_rb = (hours >= start_hour) & (hours <= end_hour)
+    
+    baseline_peak = future_base.loc[mask_rb, "total"].max()
+    rb_peak = future_rb.loc[mask_rb, "total"].max()
+    peak_drop_pct = 100 * (baseline_peak - rb_peak) / baseline_peak if baseline_peak > 0 else 0
+    
+    baseline_sum = future_base["total"].sum()
+    rb_sum = future_rb["total"].sum()
+    day_drop_pct = 100 * (baseline_sum - rb_sum) / baseline_sum if baseline_sum > 0 else 0
+    
+    modes = {
+        "car": "Cars",
+        "bike": "Bikes",
+        "pedestrian": "Pedestrians",
+        "heavy": "Heavy Vehicles"
+    }
+    
+    mode_insights = []
+    for mode_key, mode_label in modes.items():
+        avg_base = future_base.loc[mask_rb, mode_key].mean()
+        avg_rb = future_rb.loc[mask_rb, mode_key].mean()
+        
+        if avg_base > 0:
+            change_pct = 100 * (avg_rb - avg_base) / avg_base
+            change_sign = "+" if change_pct > 0 else ""
+            mode_insights.append(
+                f"  - **{mode_label}**: {avg_base:.1f} → {avg_rb:.1f} per hour "
+                f"(**{change_sign}{change_pct:.1f}%**)"
+            )
+        else:
+            mode_insights.append(f"  - **{mode_label}**: No significant traffic")
+    
+    insight_md = f"""## 📊 Roadblock Impact Analysis
+
+### 🎯 Key Findings for {selected_date.strftime('%B %d, %Y')}
+
+**Roadblock Period:** {start_hour}:00 - {end_hour}:00
+
+#### Peak Hour Impact (During Roadblock)
+- **Without Roadblock:** {baseline_peak:.0f} people/hour
+- **With Roadblock:** {rb_peak:.0f} people/hour  
+- **Peak Reduction:** **-{peak_drop_pct:.1f}%** 🔴
+
+#### Full Day Impact (All 24 Hours)
+- **Total Without Roadblock:** {baseline_sum:.0f} people
+- **Total With Roadblock:** {rb_sum:.0f} people
+- **Overall Reduction:** **-{day_drop_pct:.1f}%**
+
+---
+
+### 🚦 Impact by Transportation Mode
+**Average hourly traffic during roadblock period ({start_hour}:00 - {end_hour}:00):**
+
+{chr(10).join(mode_insights)}
+
+---
+
+### 💡 Summary
+During the **{end_hour - start_hour + 1}-hour roadblock**, car traffic drops significantly by **{100 * (future_base.loc[mask_rb, "car"].mean() - future_rb.loc[mask_rb, "car"].mean()) / future_base.loc[mask_rb, "car"].mean():.0f}%**, while bike traffic decreases by only **{abs(100 * (future_base.loc[mask_rb, "bike"].mean() - future_rb.loc[mask_rb, "bike"].mean()) / future_base.loc[mask_rb, "bike"].mean()):.0f}%**. The roadblock causes an overall daily traffic reduction of **{day_drop_pct:.1f}%**.
+"""
+    
+    return insight_md
+
 # Load data and models
 df_model = load_data()
 holidays = load_holidays()
@@ -282,7 +488,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Historical Analysis", "🔮 Future Forecast", "📊 Scenario Comparison", "📋 Raw Data", "🎯 Clustering & Anomalies"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Historical Analysis", "🔮 Future Forecast", "📊 Scenario Comparison", "🚧 Roadblock Simulation", "📋 Raw Data", "🎯 Clustering & Anomalies"])
 
 with tab1:
     st.header("Historical Traffic Analysis")
@@ -961,7 +1167,142 @@ with tab3:
         st.info("👈 Run a forecast first to see scenario comparisons")
 
 with tab4:
-    st.header("📋 Raw Data Explorer")
+    st.header("� Roadblock Scenario Simulation")
+    st.markdown("Simulate the impact of a roadblock on a specific street and date")
+    
+    # Roadblock parameters
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📍 Roadblock Configuration")
+        
+        # Street selection
+        available_streets = ["Sintmartenslatemlaan", "Graaf Karel de Goedelaan"]
+        rb_street = st.selectbox("Select Street", available_streets, key="rb_street")
+        
+        # Date selection
+        rb_date = st.date_input(
+            "Roadblock Date",
+            value=datetime(2026, 1, 6).date(),
+            min_value=date_min,
+            max_value=date_max + timedelta(days=365),
+            key="rb_date"
+        )
+        
+    with col2:
+        st.subheader("⏰ Time Window")
+        
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            rb_start_hour = st.slider("Start Hour", 0, 23, 7, key="rb_start")
+        with col_t2:
+            rb_end_hour = st.slider("End Hour", 0, 23, 9, key="rb_end")
+        
+        if rb_end_hour < rb_start_hour:
+            st.error("⚠️ End hour must be after start hour")
+    
+    run_roadblock = st.button("🚧 Simulate Roadblock", type="primary", use_container_width=True)
+    
+    if run_roadblock and rb_end_hour >= rb_start_hour:
+        with st.spinner("🔄 Simulating roadblock scenario..."):
+            # Filter to selected street
+            df_street = df_model[df_model["street_name"] == rb_street].copy()
+            
+            if len(df_street) == 0:
+                st.error(f"No data available for {rb_street}")
+            else:
+                # Build 24-hour future for selected date
+                day_start = pd.Timestamp(rb_date)
+                day_index = pd.date_range(day_start, periods=24, freq="H")
+                
+                future_rb_day = pd.DataFrame({"datetime": day_index})
+                future_rb_day["date_only"] = future_rb_day["datetime"].dt.date
+                future_rb_day["hour"] = future_rb_day["datetime"].dt.hour
+                future_rb_day["dayofweek"] = future_rb_day["datetime"].dt.dayofweek
+                future_rb_day["is_weekend"] = future_rb_day["dayofweek"].isin([5, 6]).astype(int)
+                
+                # Calendar features
+                future_rb_day = add_calendar_features(future_rb_day, holidays, vacations)
+                
+                # Weather profile per hour (median from historical)
+                weather_cols = ["temperature_c", "precipitation_mm", "cloud_cover_pct", "wind_speed_kmh"]
+                hourly_weather = df_street.groupby("hour")[weather_cols].median().reset_index()
+                future_rb_day = future_rb_day.merge(hourly_weather, on="hour", how="left")
+                
+                # Street code
+                street_code = df_street["street_code"].iloc[0]
+                future_rb_day["street_code"] = street_code
+                
+                # Predict using models
+                future_X = future_rb_day[feature_cols]
+                predictions = {}
+                for target in targets:
+                    predictions[target] = models[target].predict(future_X)
+                
+                # Build predictions dataframe
+                future_preds = pd.DataFrame({
+                    "datetime": future_rb_day["datetime"],
+                    "car": predictions["car"],
+                    "bike": predictions["bike"],
+                    "pedestrian": predictions["pedestrian"],
+                    "heavy": predictions["heavy"],
+                    "total": predictions["total_people"]
+                })
+                
+                # Apply roadblock
+                future_rb = apply_roadblock_adjustment(future_preds, rb_start_hour, rb_end_hour)
+                
+                # Display results
+                st.success(f"✅ Roadblock simulation complete for {rb_street} on {rb_date}")
+                
+                # Metrics
+                st.subheader("📊 Quick Impact Summary")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                hours_mask = (future_preds["datetime"].dt.hour >= rb_start_hour) & (future_preds["datetime"].dt.hour <= rb_end_hour)
+                peak_normal = future_preds.loc[hours_mask, "total"].max()
+                peak_rb = future_rb.loc[hours_mask, "total"].max()
+                peak_reduction = 100 * (peak_normal - peak_rb) / peak_normal if peak_normal > 0 else 0
+                
+                with col1:
+                    st.metric("Peak Without Roadblock", f"{peak_normal:.0f} people/hr")
+                with col2:
+                    st.metric("Peak With Roadblock", f"{peak_rb:.0f} people/hr", 
+                             delta=f"-{peak_reduction:.0f}%", delta_color="inverse")
+                with col3:
+                    car_avg_normal = future_preds.loc[hours_mask, "car"].mean()
+                    car_avg_rb = future_rb.loc[hours_mask, "car"].mean()
+                    car_reduction = 100 * (car_avg_normal - car_avg_rb) / car_avg_normal if car_avg_normal > 0 else 0
+                    st.metric("Car Traffic Reduction", f"{car_reduction:.0f}%")
+                with col4:
+                    bike_avg_normal = future_preds.loc[hours_mask, "bike"].mean()
+                    bike_avg_rb = future_rb.loc[hours_mask, "bike"].mean()
+                    bike_reduction = 100 * (bike_avg_normal - bike_avg_rb) / bike_avg_normal if bike_avg_normal > 0 else 0
+                    st.metric("Bike Traffic Reduction", f"{bike_reduction:.0f}%")
+                
+                # Visualizations
+                st.markdown("---")
+                st.subheader("📈 Total Traffic Impact")
+                fig1 = plot_total_roadblock_day(future_preds, future_rb, rb_date, rb_street, rb_start_hour, rb_end_hour)
+                st.pyplot(fig1)
+                
+                st.markdown("---")
+                st.subheader("🚦 Impact by Transportation Mode")
+                fig2 = plot_per_mode_roadblock_day(future_preds, future_rb, rb_date, rb_street, rb_start_hour, rb_end_hour)
+                st.pyplot(fig2)
+                
+                # Insights
+                st.markdown("---")
+                insights = build_roadblock_insights(future_preds, future_rb, rb_date, rb_start_hour, rb_end_hour)
+                st.markdown(insights)
+    
+    elif run_roadblock:
+        st.warning("Please ensure end hour is after or equal to start hour")
+    else:
+        st.info("👆 Configure the roadblock parameters and click 'Simulate Roadblock' to see the impact")
+
+with tab5:
+    st.header("�📋 Raw Data Explorer")
     
     # Data filtering options
     st.subheader("🔍 Data Filters")
@@ -1046,7 +1387,7 @@ with tab4:
     else:
         st.warning("No data found for selected filters.")
 
-with tab5:
+with tab6:
     st.header("🎯 Clustering & Anomaly Detection")
     st.markdown("Analysis of cyclist traffic patterns and anomaly detection on both key campus streets.")
     
