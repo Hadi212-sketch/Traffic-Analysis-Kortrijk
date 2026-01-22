@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 from datetime import datetime, timedelta
+from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -50,27 +52,30 @@ st.markdown("""
 @st.cache_data
 def load_data():
     """Load the preprocessed dataframe"""
+    # Get base path (works for both local and Streamlit Cloud)
+    base_path = Path(__file__).resolve().parent.parent
     # Try parquet first, then CSV as fallback
     try:
-        df = pd.read_parquet("../models/df_model.parquet")
+        df = pd.read_parquet(base_path / "models" / "df_model.parquet")
         df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize(None)
         return df
     except (FileNotFoundError, OSError) as e:
         # If parquet fails, try CSV
         try:
-            df = pd.read_csv("../models/df_model.csv", parse_dates=['datetime'])
+            df = pd.read_csv(base_path / "models" / "df_model.csv", parse_dates=['datetime'])
             df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize(None)
             return df
         except FileNotFoundError:
             st.error("❌ Data file not found. Please run the export code in the notebook first.")
-            st.error("The notebook should export df_model to ../models/df_model.parquet or df_model.csv")
+            st.error(f"Looking in: {base_path / 'models'}")
             st.stop()
 
 @st.cache_data
 def load_holidays():
     """Load holiday data"""
     try:
-        holidays = pd.read_csv("../data/belgian_holidays.csv")
+        base_path = Path(__file__).resolve().parent.parent
+        holidays = pd.read_csv(base_path / "data" / "belgian_holidays.csv")
         holidays['date'] = pd.to_datetime(holidays['date']).dt.date
         holidays['is_holiday'] = 1
         return holidays
@@ -82,7 +87,8 @@ def load_holidays():
 def load_vacations():
     """Load school vacation data"""
     try:
-        vac = pd.read_csv("../data/school_vacations.csv")
+        base_path = Path(__file__).resolve().parent.parent
+        vac = pd.read_csv(base_path / "data" / "school_vacations.csv")
         vac['date'] = pd.to_datetime(vac['date']).dt.date
         vac['is_school_vacation'] = 1
         return vac
@@ -94,12 +100,15 @@ def load_vacations():
 def load_models():
     """Load trained models and metadata"""
     try:
-        models = joblib.load("../models/models.pkl")
-        targets = joblib.load("../models/targets.pkl")
-        feature_cols = joblib.load("../models/feature_cols.pkl")
+        base_path = Path(__file__).resolve().parent.parent
+        models = joblib.load(base_path / "models" / "models.pkl")
+        targets = joblib.load(base_path / "models" / "targets.pkl")
+        feature_cols = joblib.load(base_path / "models" / "feature_cols.pkl")
         return models, targets, feature_cols
     except FileNotFoundError:
+        base_path = Path(__file__).resolve().parent.parent
         st.error("❌ Model files not found. Please run the export code in the notebook first.")
+        st.error(f"Looking in: {base_path / 'models'}")
         st.stop()
 
 # Holiday and vacation logic functions
@@ -1167,7 +1176,7 @@ with tab3:
         st.info("👈 Run a forecast first to see scenario comparisons")
 
 with tab4:
-    st.header("� Roadblock Scenario Simulation")
+    st.header("  Roadblock Scenario Simulation")
     st.markdown("Simulate the impact of a roadblock on a specific street and date")
     
     # Roadblock parameters
@@ -1302,7 +1311,7 @@ with tab4:
         st.info("👆 Configure the roadblock parameters and click 'Simulate Roadblock' to see the impact")
 
 with tab5:
-    st.header("�📋 Raw Data Explorer")
+    st.header(" 📋 Raw Data Explorer")
     
     # Data filtering options
     st.subheader("🔍 Data Filters")
@@ -1395,7 +1404,8 @@ with tab6:
     @st.cache_data
     def load_clustering_data():
         try:
-            df_full = pd.read_csv("../data/traffic_weather_merged.csv", parse_dates=['date'])
+            base_path = Path(__file__).resolve().parent.parent
+            df_full = pd.read_csv(base_path / "data" / "traffic_weather_merged.csv", parse_dates=['date'])
             return df_full
         except FileNotFoundError:
             st.error("❌ Traffic weather data file not found.")
