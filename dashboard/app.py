@@ -1186,7 +1186,7 @@ with tab4:
         st.subheader("📍 Roadblock Configuration")
         
         # Street selection
-        available_streets = ["Sintmartenslatemlaan", "Graaf Karel de Goedelaan"]
+        available_streets = ["Sintmartenslatemlaan", "Graaf Karel De Goedelaan"]
         rb_street = st.selectbox("Select Street", available_streets, key="rb_street")
         
         # Date selection
@@ -1433,7 +1433,7 @@ with tab6:
         # Focus on cyclist data for both key streets
         df_two_streets = clustering_data[clustering_data['street_name'].isin([
             'Sintmartenslatemlaan',
-            'Graaf Karel de Goedelaan'
+            'Graaf Karel De Goedelaan'
         ])].copy()
         
         if len(df_two_streets) == 0:
@@ -1457,7 +1457,7 @@ with tab6:
         
         with col2:
             focus_street = st.selectbox("Focus Street for Details", 
-                                       ['Both Streets', 'Sintmartenslatemlaan', 'Graaf Karel de Goedelaan'])
+                                       ['Both Streets', 'Sintmartenslatemlaan', 'Graaf Karel De Goedelaan'])
         
         if st.button("🔄 Run Clustering Analysis", type="primary"):
             if not sklearn_available:
@@ -1510,7 +1510,7 @@ with tab6:
             # Visualization: Hourly patterns by cluster
             st.subheader("📈 Hourly Traffic Patterns by Cluster")
             
-            streets_to_plot = ['Graaf Karel de Goedelaan', 'Sintmartenslatemlaan'] if focus_street == 'Both Streets' else [focus_street]
+            streets_to_plot = ['Graaf Karel De Goedelaan', 'Sintmartenslatemlaan'] if focus_street == 'Both Streets' else [focus_street]
             
             if focus_street == 'Both Streets':
                 fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
@@ -1558,7 +1558,7 @@ with tab6:
             # Scatter plot: Temperature vs Cyclist count with anomalies
             fig, axes = plt.subplots(1, 2, figsize=(16, 6))
             
-            for idx, street in enumerate(['Graaf Karel de Goedelaan', 'Sintmartenslatemlaan']):
+            for idx, street in enumerate(['Graaf Karel De Goedelaan', 'Sintmartenslatemlaan']):
                 street_data = df_two_streets[df_two_streets['street_name'] == street]
                 normal = street_data[~street_data['is_anomaly']]
                 anomaly = street_data[street_data['is_anomaly']]
