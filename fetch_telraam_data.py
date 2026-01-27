@@ -94,10 +94,37 @@ def update_segment(segment_id: str, name: str):
     combined.to_csv(path, index=False)
     print(f"[{name}] updated: {len(new_df)} new rows, total {len(combined)} rows")
 
+def combine_raw_data():
+    """Combine both street CSV files into traffic_two_streets_raw.csv"""
+    print("\n[Combining] Creating traffic_two_streets_raw.csv...")
+    
+    dfs = []
+    for seg_name in SEGMENTS.values():
+        path = os.path.join(DATA_DIR, f"{seg_name}_per-hour.csv")
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            df['street_name'] = seg_name.replace('_', ' ').title()
+            dfs.append(df)
+            print(f"  ✓ Loaded {len(df)} rows from {seg_name}")
+    
+    if dfs:
+        combined = pd.concat(dfs, ignore_index=True)
+        combined.sort_values('date', inplace=True)
+        
+        output_path = os.path.join(DATA_DIR, "traffic_two_streets_raw.csv")
+        combined.to_csv(output_path, index=False)
+        print(f"  ✓ Combined file saved: {len(combined)} total rows")
+        print(f"  ✓ Output: {output_path}")
+    else:
+        print("  ⚠ No street data files found to combine")
+
 def main():
     for seg_id, seg_name in SEGMENTS.items():
         update_segment(seg_id, seg_name)
         time.sleep(2)
+    
+    # Combine both streets into raw CSV
+    combine_raw_data()
 
 if __name__ == "__main__":
     main()
